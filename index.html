@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>Doge Defender</title>
+    <style>
+      body {
+        margin: 0;
+        padding: 0;
+        background: #000;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+      }
+      canvas {
+        background: #000;
+        display: block;
+      }
+      #score {
+        color: white;
+        text-align: center;
+        font-family: Arial;
+        font-size: 24px; /* Make it larger */
+        margin: 10px 0; /* Add spacing */
+        z-index: 10; /* Ensure it’s above the canvas */
+      }
+    </style>
+  </head>
+  <body>
+    <div id="score">$0</div>
+    <canvas id="gameCanvas" width="800" height="600"></canvas>
+
+    <script>
+      const canvas = document.getElementById("gameCanvas");
+      const ctx = canvas.getContext("2d");
+      const scoreDisplay = document.getElementById("score");
+
+      // Load assets
+      const dogeImg = new Image();
+      dogeImg.src = "doge.jpg";
+      const enemyImg = new Image();
+      enemyImg.src = "enemy.jpg";
+      const powerupImg = new Image();
+      powerupImg.src = "powerup.jpg";
+
+      const shootSound = new Audio("shoot.mp3");
+      const bgSound = new Audio("background.mp3");
+      bgSound.loop = true;
+      bgSound.volume = 0.3;
+
+      // Audio debugging
+      shootSound.onerror = () => console.error("Error loading shoot.mp3");
+      bgSound.onerror = () => console.error("Error loading background.mp3");
+      shootSound.oncanplay = () => console.log("shoot.mp3 loaded");
+      bgSound.oncanplay = () => console.log("background.mp3 loaded");
+
+      // Game objects
+      const player = { x: 400, y: 300, speed: 5, bullets: 1, size: 32 };
+      const bullets = [];
+      const enemies = [];
+      const powerups = [];
+      let score = 0;
+      let gameOver = false;
+      let gameStarted = false;
+
+      // Controls
+      const keys = {};
+      window.addEventListener("keydown", (e) => (keys[e.key] = true));
+      window.addEventListener("keyup", (e) => (keys[e.key] = false));
+
+      function spawnEnemy() {
+        const side = Math.floor(Math.random() * 4);
+        let x, y;
+        if (side === 0) {
+          x = Math.random() * 800;
+          y = -32;
+        } else if (side === 1) {
+          x = 832;
+          y = Math.random() * 600;
+        } else if (side === 2) {
+          x = Math.random() * 800;
+          y = 632;
+        } else {
+          x = -32;
+          y = Math.random() * 600;
+        }
+        enemies.push({ x, y, speed: 2, size: 32 });
+      }
+
+      function spawnPowerup() {
+        powerups.push({
+          x: Math.random() * 768,
+          y: Math.random() * 568,
+          size: 32,
+        });
+        console.log("Powerup spawned at:", powerups[powerups.length - 1]);
+      }
+
+      function update() {
+        if (gameOver) {
+          if (keys["r"]) location.reload();
+          return;
+        }
+
+        if (
+          !gameStarted &&
+          (keys["ArrowLeft"] ||
+            keys["ArrowRight"] ||
+            keys["ArrowUp"] ||
+            keys["ArrowDown"] ||
+            keys[" "])
+        ) {
+          bgSound
+            .play()
+            .catch((e) => console.error("Background sound error:", e));
+          gameStarted = true;
+        }
+
+        // Player movement
+        if (keys["ArrowLeft"]) player.x -= player.speed;
+        if (keys["ArrowRight"]) player.x += player.speed;
+        if (keys["ArrowUp"]) player.y -= player.speed;
+        if (keys["ArrowDown"]) player.y += player.speed;
+        player.x = Math.max(0, Math.min(800 - player.size, player.x));
+        player.y = Math.max(0, Math.min(600 - player.size, player.y));
+
+        // Shooting
+        if (keys[" "]) {
+          if (!keys["lastShot"] || Date.now() - keys["lastShot"] > 200) {
+            for (let i = 0; i < player.bullets; i++) {
+              bullets.push({
+                x: player.x + player.size / 2,
+                y: player.y,
+                speed: 7,
+                angle: -Math.PI / 2 + (i - (player.bullets - 1) / 2) * 0.2,
+              });
+            }
+            keys["lastShot"] = Date.now();
+          }
+        }
+
+        // Update bullets
+        bullets.forEach((b) => {
+          b.x += Math.cos(b.angle) * b.speed;
+          b.y += Math.sin(b.angle) * b.speed;
+        });
+        bullets.splice(
+          0,
+          bullets.length,
+          ...bullets.filter(
+            (b) => b.y > -10 && b.y < 610 && b.x > -10 && b.x < 810
+          )
+        );
+
+        // Update enemies
+        enemies.forEach((e) => {
+          const dx = player.x - e.x;
+          const dy = player.y - e.y;
+          const angle = Math.atan2(dy, dx);
+          e.x += Math.cos(angle) * e.speed;
+          e.y += Math.sin(angle) * e.speed;
+        });
+
+        // Collision detection
+        bullets.forEach((b, bi) => {
+          enemies.forEach((e, ei) => {
+            if (
+              Math.hypot(b.x - e.x - e.size / 2, b.y - e.y - e.size / 2) < 32
+            ) {
+              bullets.splice(bi, 1);
+              enemies.splice(ei, 1);
+              score += 10000000;
+              shootSound
+                .play()
+                .catch((e) => console.error("Shoot sound error:", e));
+              if (Math.random() < 0.2) spawnPowerup();
+              return;
+            }
+          });
+        });
+
+        powerups.forEach((p, pi) => {
+          if (Math.hypot(player.x - p.x, player.y - p.y) < 32) {
+            powerups.splice(pi, 1);
+            player.bullets++;
+            console.log("Powerup collected! Bullets:", player.bullets);
+          }
+        });
+
+        enemies.forEach((e) => {
+          if (Math.hypot(player.x - e.x, player.y - e.y) < 32) {
+            gameOver = true;
+            bgSound.pause();
+          }
+        });
+
+        // Win condition
+        if (score >= 1000000000) {
+          gameOver = true;
+          bgSound.pause();
+        }
+
+        if (Math.random() < 0.02) spawnEnemy();
+      }
+
+      function draw() {
+        ctx.clearRect(0, 0, 800, 600);
+
+        // Draw player
+        ctx.drawImage(dogeImg, player.x, player.y, player.size, player.size);
+
+        // Draw bullets
+        ctx.fillStyle = "white";
+        bullets.forEach((b) => ctx.fillRect(b.x, b.y, 4, 4));
+
+        // Draw enemies
+        enemies.forEach((e) =>
+          ctx.drawImage(enemyImg, e.x, e.y, e.size, e.size)
+        );
+
+        // Draw powerups
+        powerups.forEach((p) =>
+          ctx.drawImage(powerupImg, p.x, p.y, p.size, p.size)
+        );
+
+        // Update score explicitly
+        scoreDisplay.textContent = `$${score.toLocaleString()}`;
+        console.log("Score updated to:", score); // Debug score changes
+
+        // Game over/win screen
+        if (gameOver) {
+          ctx.fillStyle = "white";
+          ctx.font = "48px Arial";
+          ctx.textAlign = "center";
+          ctx.fillText(
+            score >= 1000000000 ? "YOU WIN!" : "GAME OVER",
+            400,
+            300
+          );
+          ctx.font = "24px Arial";
+          ctx.fillText("Press R to restart", 400, 350);
+        }
+      }
+
+      function gameLoop() {
+        update();
+        draw();
+        requestAnimationFrame(gameLoop);
+      }
+
+      // Start game
+      gameLoop();
+    </script>
+  </body>
+</html>
